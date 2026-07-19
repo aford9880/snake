@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Змейка</title>
+<style>
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: #0a0a1a;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  overflow: hidden;
+}
+
+.bg-grid {
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+  background-size: 40px 40px;
+  z-index: 0;
+  animation: gridScroll 20s linear infinite;
+}
+
+@keyframes gridScroll {
+  from { transform: translate(0, 0); }
+  to { transform: translate(40px, 40px); }
+}
+
+.game-row {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.game-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+/* ---- VERTICAL SPEED SLIDER ---- */
+.speed-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 6px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.04);
+}
+
+.speed-side-label {
+  color: rgba(255,255,255,0.25);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  writing-mode: vertical-lr;
+  text-orientation: mixed;
+}
+
+.speed-side input[type=range] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 4px;
+  height: 200px;
+  background: rgba(255,255,255,0.12);
+  border-radius: 2px;
+  outline: none;
+  writing-mode: vertical-lr;
+  direction: rtl;
+  cursor: pointer;
+}
+
+.speed-side input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4d96ff, #6bcb77);
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(77,150,255,0.3);
+  transition: transform 0.1s;
+}
+
+.speed-side input[type=range]::-webkit-slider-thumb:hover {
+  transform: scale(1.25);
+}
+
+.speed-side input[type=range]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4d96ff, #6bcb77);
+  cursor: pointer;
+}
+
+#speedValue {
+  color: rgba(255,255,255,0.4);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  min-width: 24px;
+  text-align: center;
+}
+
+/* ---- HEADER ---- */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 0 8px;
+}
+
+.score-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.score-label {
+  color: rgba(255,255,255,0.4);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+.score {
+  color: #fff;
+  font-size: 32px;
+  font-weight: 700;
+  min-width: 60px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.high-score {
+  color: rgba(255,255,255,0.3);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.high-score span {
+  color: #f0e68c;
+  font-weight: 600;
+  font-size: 18px;
+}
+
+/* ---- CANVAS ---- */
+.canvas-container {
+  position: relative;
+  border-radius: 16px;
+  padding: 3px;
+  background: linear-gradient(135deg, #ff6b6b, #ffa94d, #ffd93d, #6bcb77, #4d96ff, #9b59b6, #ff6b6b);
+  background-size: 400% 400%;
+  animation: borderGlow 6s ease infinite;
+}
+
+@keyframes borderGlow {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+canvas {
+  display: block;
+  border-radius: 14px;
+  background: #0f0f23;
+  width: 500px;
+  height: 500px;
+  touch-action: none;
+}
+
+/* ---- HUD ---- */
+.hud {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 0 8px;
+}
+
+#status {
+  color: rgba(255,255,255,0.4);
+  font-size: 13px;
+  letter-spacing: 0.5px;
+}
+
+button {
+  background: linear-gradient(135deg, #4d96ff, #6bcb77);
+  border: none;
+  color: #fff;
+  padding: 8px 20px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+  letter-spacing: 0.5px;
+}
+
+button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(77,150,255,0.35);
+}
+
+button:active {
+  transform: translateY(0);
+}
+
+.controls-hint {
+  display: flex;
+  gap: 24px;
+  color: rgba(255,255,255,0.2);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+@media (max-width: 720px) {
+  .game-row { flex-direction: column; gap: 12px; }
+  .speed-side { flex-direction: row; padding: 8px 16px; }
+  .speed-side-label { writing-mode: unset; }
+  .speed-side input[type=range] { writing-mode: unset; direction: unset; width: 120px; height: 4px; }
+  canvas { width: calc(100vw - 40px); height: calc(100vw - 40px); }
+  .score { font-size: 24px; }
+}
+</style>
+</head>
+<body>
+<div class="bg-grid"></div>
+
+<div class="game-row">
+  <!-- Vertical speed slider -->
+  <div class="speed-side">
+    <div class="speed-side-label">Скорость</div>
+    <input type="range" id="speedSlider" min="3" max="500" value="160" step="1">
+    <span id="speedValue">160</span>
+  </div>
+
+  <!-- Game -->
+  <div class="game-column">
+    <div class="header">
+      <div class="score-wrap">
+        <span class="score-label">Счёт</span>
+        <span class="score" id="score">0</span>
+      </div>
+      <div class="high-score">Рекорд: <span id="highScore">0</span></div>
+    </div>
+
+    <div class="canvas-container">
+      <canvas id="game" width="500" height="500"></canvas>
+    </div>
+
+    <div class="hud">
+      <span id="status">← ↑ → ↓ / WASD</span>
+      <div style="display:flex;gap:8px">
+        <button id="autoBtn">✨ Авто</button>
+        <button id="restartBtn">Новая игра</button>
+      </div>
+    </div>
+
+    <div class="controls-hint">
+      <span id="modeLabel">🎮 Управление: ручное</span>
+    </div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('score');
+const highScoreEl = document.getElementById('highScore');
+const statusEl = document.getElementById('status');
+
+const W = 500, H = 500;
+const COLS = 20, ROWS = 20;
+const CELL = W / COLS;
+
+let highScore = +(localStorage.getItem('snakeHighScore') || 0);
+highScoreEl.textContent = highScore;
+
+let snake, prevSnake, food, specialFood, direction, pendingDir, score, gameOver, win, speed, baseSpeed, particles, lastMove;
+let movesSinceLastEat;
+
+function init() {
+  const mid = Math.floor(COLS / 2);
+  const s = [{x: mid, y: mid}, {x: mid - 1, y: mid}, {x: mid - 2, y: mid}];
+  snake = s;
+  prevSnake = s.map(p => ({...p}));
+  direction = {x: 1, y: 0};
+  pendingDir = null;
+  score = 0;
+  gameOver = false;
+  win = false;
+  speed = baseSpeed;
+  particles = [];
+  lastMove = 0;
+  movesSinceLastEat = 0;
+  scoreEl.textContent = '0';
+  statusEl.textContent = 'Игра началась';
+  placeFood();
+  specialFood = null;
+}
+
+function placeFood() {
+  const occupied = new Set(snake.map(p => `${p.x},${p.y}`));
+  const free = [];
+  for (let x = 0; x < COLS; x++) {
+    for (let y = 0; y < ROWS; y++) {
+      if (!occupied.has(`${x},${y}`)) free.push({x, y});
+    }
+  }
+  if (free.length === 0) { win = true; food = null; return; }
+  food = free[Math.floor(Math.random() * free.length)];
+
+  if (score > 0 && score % 50 === 0 && free.length > 1) {
+    const nope = new Set(free.map(p => `${p.x},${p.y}`));
+    nope.delete(`${food.x},${food.y}`);
+    const arr = [...nope].map(k => { const [x,y] = k.split(',').map(Number); return {x,y}; });
+    specialFood = arr[Math.floor(Math.random() * arr.length)];
+  } else {
+    specialFood = null;
+  }
+}
+
+function spawnParticles(x, y, color, count) {
+  count = count || 14;
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * 2 * Math.PI;
+    const spd = 1 + Math.random() * 3;
+    particles.push({
+      x: x * CELL + CELL / 2,
+      y: y * CELL + CELL / 2,
+      vx: Math.cos(angle) * spd,
+      vy: Math.sin(angle) * spd,
+      life: 1,
+      decay: 0.018 + Math.random() * 0.025,
+      size: 2 + Math.random() * 4,
+      color
+    });
+  }
+}
+
+function update() {
+  if (gameOver || win) return false;
+
+  if (pendingDir) {
+    const nd = pendingDir;
+    if (!(nd.x + direction.x === 0 && nd.y + direction.y === 0)) {
+      direction = nd;
+    }
+    pendingDir = null;
+  }
+
+  const hd = snake[0];
+  const head = { x: hd.x + direction.x, y: hd.y + direction.y };
+
+  if (head.x < 0 || head.x >= COLS || head.y < 0 || head.y >= ROWS) {
+    gameOver = true;
+    statusEl.textContent = 'Столкновение со стеной!';
+    return true;
+  }
+
+  const willEat = food && head.x === food.x && head.y === food.y;
+  const bodyCheck = willEat ? snake : snake.slice(0, -1);
+  if (bodyCheck.some(p => p.x === head.x && p.y === head.y)) {
+    gameOver = true;
+    statusEl.textContent = 'Самоедство!';
+    return true;
+  }
+
+  prevSnake = snake.map(p => ({...p}));
+
+  snake.unshift(head);
+
+  const ate = willEat;
+  if (ate) {
+    movesSinceLastEat = 0;
+    score += 10;
+    scoreEl.textContent = score;
+    spawnParticles(food.x, food.y, '#ffd93d');
+    placeFood();
+    if (win) {
+      statusEl.textContent = 'Победа! Поле заполнено!';
+      return true;
+    }
+    if (score % 50 === 0 && speed > 60) {
+      speed = Math.max(60, speed - 8);
+      statusEl.textContent = 'Скорость увеличена!';
+    } else {
+      statusEl.textContent = score % 50 === 0 ? '' : '+10';
+    }
+  } else {
+    movesSinceLastEat++;
+    snake.pop();
+  }
+
+  if (specialFood && head.x === specialFood.x && head.y === specialFood.y) {
+    score += 30;
+    scoreEl.textContent = score;
+    spawnParticles(specialFood.x, specialFood.y, '#ff6bff', 26);
+    specialFood = null;
+    statusEl.textContent = 'Бонус! +30';
+  }
+
+  if (score > highScore) {
+    highScore = score;
+    highScoreEl.textContent = highScore;
+    localStorage.setItem('snakeHighScore', highScore);
+  }
+
+  return true;
+}
+
+// ---- AI ----
+let autoPlay = false;
+const modeLabel = document.getElementById('modeLabel');
+
+function bfs(sx, sy, tx, ty, occupied, freeTail) {
+  const q = [{x: sx, y: sy, d: 0}];
+  const vis = new Set();
+  vis.add(`${sx},${sy}`);
+  const dirs = [[0,-1],[0,1],[-1,0],[1,0]];
+  while (q.length) {
+    const {x, y, d} = q.shift();
+    if (x === tx && y === ty) return d;
+    for (const [dx, dy] of dirs) {
+      const nx = x + dx, ny = y + dy, k = `${nx},${ny}`;
+      if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) continue;
+      if (vis.has(k)) continue;
+      if (occupied.has(k) && !(freeTail && k === `${tx},${ty}`)) continue;
+      vis.add(k);
+      q.push({x: nx, y: ny, d: d + 1});
+    }
+  }
+  return -1;
+}
+
+function countReachable(sx, sy, occupied) {
+  const q = [{x: sx, y: sy}];
+  const vis = new Set();
+  vis.add(`${sx},${sy}`);
+  const dirs = [[0,-1],[0,1],[-1,0],[1,0]];
+  while (q.length) {
+    const {x, y} = q.shift();
+    for (const [dx, dy] of dirs) {
+      const nx = x + dx, ny = y + dy, k = `${nx},${ny}`;
+      if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) continue;
+      if (vis.has(k)) continue;
+      if (occupied.has(k)) continue;
+      vis.add(k);
+      q.push({x: nx, y: ny});
+    }
+  }
+  return vis.size;
+}
+
+function computeAIMove() {
+  if (!food) return null;
+  const head = snake[0];
+  const dirs = [[0,-1],[0,1],[-1,0],[1,0]];
+  const candidates = [];
+
+  for (const [dx, dy] of dirs) {
+    if (dx + direction.x === 0 && dy + direction.y === 0) continue;
+    const nx = head.x + dx, ny = head.y + dy;
+    if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) continue;
+
+    const willEat = nx === food.x && ny === food.y;
+
+    const newSnake = [{x: nx, y: ny}, ...snake];
+    if (!willEat) newSnake.pop();
+
+    if (newSnake.slice(1).some(p => p.x === nx && p.y === ny)) continue;
+
+    const newSet = new Set(newSnake.map(p => `${p.x},${p.y}`));
+    const newTail = newSnake[newSnake.length - 1];
+
+    const toFood = bfs(nx, ny, food.x, food.y, newSet, false);
+    const toTail = bfs(nx, ny, newTail.x, newTail.y, newSet, true);
+    const space = countReachable(nx, ny, newSet);
+
+    let eatSafe = true;
+    if (willEat) {
+      const postSet = new Set(newSnake.map(p => `${p.x},${p.y}`));
+      const postTail = newSnake[newSnake.length - 1];
+      eatSafe = bfs(nx, ny, postTail.x, postTail.y, postSet, true) >= 0;
+    }
+
+    const survived = simulateLookahead(newSnake, food, direction, 8);
+
+    let score = 0;
+
+    if (toFood >= 0) {
+      score += 500000 - toFood * 5000;
+      if (willEat) score += 300000;
+      if (willEat && eatSafe) score += 200000;
+      if (willEat && !eatSafe) score -= 1000000;
+    }
+
+    if (toTail >= 0) {
+      score += 80000 - toTail * 500;
+    } else {
+      score -= 1000000;
+    }
+
+    if (!survived) score -= 800000;
+
+    score += space * 5;
+
+    candidates.push({dx, dy, score, toFood, toTail, survived, space});
+  }
+
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => b.score - a.score);
+
+  // Чем дольше без еды — тем больше шума, чтобы разорвать цикл
+  if (movesSinceLastEat > 50) {
+    const noise = (movesSinceLastEat - 50) * 800;
+    for (const c of candidates) {
+      c.score += (Math.random() - 0.5) * noise;
+    }
+    candidates.sort((a, b) => b.score - a.score);
+  }
+
+  return candidates[0];
+}
+
+function simulateLookahead(snakeArr, foodPos, curDir, steps) {
+  let sim = snakeArr.map(p => ({...p}));
+  let f = foodPos ? {...foodPos} : null;
+  let dir = {...curDir};
+  const dd = [[0,-1],[0,1],[-1,0],[1,0]];
+
+  for (let s = 0; s < steps; s++) {
+    const head = sim[0];
+    const set = new Set(sim.map(p => `${p.x},${p.y}`));
+    const tail = sim[sim.length - 1];
+    const second = sim.length > 1 ? sim[sim.length - 2] : null;
+
+    let best = null;
+
+    for (const [dx, dy] of dd) {
+      if (dx + dir.x === 0 && dy + dir.y === 0) continue;
+      const nx = head.x + dx, ny = head.y + dy;
+      if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) continue;
+      const k = `${nx},${ny}`;
+      if (set.has(k) && !(nx === tail.x && ny === tail.y)) continue;
+
+      const eat = f && nx === f.x && ny === f.y;
+      const ns = new Set(set);
+      ns.add(k);
+      if (!eat) ns.delete(`${tail.x},${tail.y}`);
+
+      let sc = 0;
+      if (f) {
+        const d = bfs(nx, ny, f.x, f.y, ns, false);
+        if (d >= 0) sc += 10000 - d * 200;
+      }
+      const nt = eat ? tail : second;
+      if (nt) {
+        const d = bfs(nx, ny, nt.x, nt.y, ns, true);
+        if (d >= 0) sc += 8000 - d * 100;
+        else sc -= 5000;
+      }
+      if (!best || sc > best.sc) best = {dx, dy, nx, ny, eat, sc};
+    }
+
+    if (!best) return false;
+
+    sim.unshift({x: best.nx, y: best.ny});
+    if (!best.eat) sim.pop();
+    if (best.eat && f) f = null;
+    dir = {x: best.dx, y: best.dy};
+  }
+  return true;
+}
+
+function toggleAutoPlay() {
+  autoPlay = !autoPlay;
+  const btn = document.getElementById('autoBtn');
+  if (autoPlay) {
+    btn.textContent = '✨ Авто ON';
+    btn.style.background = 'linear-gradient(135deg,#ff6b6b,#ffa94d)';
+    modeLabel.textContent = '✨ Управление: ИИ';
+    statusEl.textContent = 'Режим ИИ';
+  } else {
+    btn.textContent = '✨ Авто';
+    btn.style.background = '';
+    modeLabel.textContent = '🎮 Управление: ручное';
+    statusEl.textContent = 'Ручной режим';
+  }
+}
+
+// ---- DRAW ----
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+function draw(now) {
+  ctx.clearRect(0, 0, W, H);
+
+  const elapsed = Math.min((now - lastMove) / speed, 1);
+
+  // grid
+  ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= COLS; i++) {
+    ctx.beginPath(); ctx.moveTo(i * CELL, 0); ctx.lineTo(i * CELL, H); ctx.stroke();
+  }
+  for (let i = 0; i <= ROWS; i++) {
+    ctx.beginPath(); ctx.moveTo(0, i * CELL); ctx.lineTo(W, i * CELL); ctx.stroke();
+  }
+
+  // food glow + draw
+  if (food) {
+    const fx = food.x * CELL + CELL / 2;
+    const fy = food.y * CELL + CELL / 2;
+    const grd = ctx.createRadialGradient(fx, fy, 0, fx, fy, CELL * 1.8);
+    grd.addColorStop(0, 'rgba(255,217,61,0.35)');
+    grd.addColorStop(0.5, 'rgba(255,217,61,0.1)');
+    grd.addColorStop(1, 'rgba(255,217,61,0)');
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.arc(fx, fy, CELL * 1.8, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#ffd93d';
+    ctx.shadowColor = '#ffd93d';
+    ctx.shadowBlur = 14;
+    ctx.beginPath();
+    ctx.arc(fx, fy, CELL / 2.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  // special food
+  if (specialFood) {
+    const sx = specialFood.x * CELL + CELL / 2;
+    const sy = specialFood.y * CELL + CELL / 2;
+    const pulse = 0.7 + 0.3 * Math.sin(now / 180);
+
+    const sgrd = ctx.createRadialGradient(sx, sy, 0, sx, sy, CELL * 1.6);
+    sgrd.addColorStop(0, 'rgba(255,107,255,0.3)');
+    sgrd.addColorStop(1, 'rgba(255,107,255,0)');
+    ctx.fillStyle = sgrd;
+    ctx.beginPath();
+    ctx.arc(sx, sy, CELL * 1.6, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#ff6bff';
+    ctx.shadowColor = '#ff6bff';
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.arc(sx, sy, CELL / 2.3 * pulse, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#fff';
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('⭐', sx, sy);
+  }
+
+  // snake segments — interpolated, zero shadows on body
+  const sLen = Math.min(prevSnake.length, snake.length);
+  for (let i = 0; i < snake.length; i++) {
+    let px, py;
+    if (i < sLen) {
+      px = lerp(prevSnake[i].x, snake[i].x, elapsed);
+      py = lerp(prevSnake[i].y, snake[i].y, elapsed);
+    } else {
+      px = snake[i].x;
+      py = snake[i].y;
+    }
+
+    const t = (snake.length - i) / snake.length;
+    const r = Math.round(lerp(80, 130, t));
+    const g = Math.round(lerp(190, 230, t));
+    const b = Math.round(lerp(255, 90, t));
+    const color = `rgb(${r},${g},${b})`;
+
+    const pad = 1.5;
+    const size = CELL - pad * 2;
+    const drawX = px * CELL + pad;
+    const drawY = py * CELL + pad;
+
+    ctx.fillStyle = color;
+
+    if (i === 0) {
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 10;
+    } else {
+      ctx.shadowBlur = 0;
+    }
+
+    ctx.beginPath();
+    const rad = 3;
+    ctx.moveTo(drawX + rad, drawY);
+    ctx.lineTo(drawX + size - rad, drawY);
+    ctx.quadraticCurveTo(drawX + size, drawY, drawX + size, drawY + rad);
+    ctx.lineTo(drawX + size, drawY + size - rad);
+    ctx.quadraticCurveTo(drawX + size, drawY + size, drawX + size - rad, drawY + size);
+    ctx.lineTo(drawX + rad, drawY + size);
+    ctx.quadraticCurveTo(drawX, drawY + size, drawX, drawY + size - rad);
+    ctx.lineTo(drawX, drawY + rad);
+    ctx.quadraticCurveTo(drawX, drawY, drawX + rad, drawY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // eyes on head
+    if (i === 0) {
+      ctx.fillStyle = '#fff';
+      const eyeR = 2.8;
+      let ex1, ey1, ex2, ey2;
+      if (direction.x === 1) {
+        ex1 = drawX + size - 6; ey1 = drawY + 6;
+        ex2 = drawX + size - 6; ey2 = drawY + size - 6;
+      } else if (direction.x === -1) {
+        ex1 = drawX + 6; ey1 = drawY + 6;
+        ex2 = drawX + 6; ey2 = drawY + size - 6;
+      } else if (direction.y === -1) {
+        ex1 = drawX + 6; ey1 = drawY + 6;
+        ex2 = drawX + size - 6; ey2 = drawY + 6;
+      } else {
+        ex1 = drawX + 6; ey1 = drawY + size - 6;
+        ex2 = drawX + size - 6; ey2 = drawY + size - 6;
+      }
+      ctx.beginPath(); ctx.arc(ex1, ey1, eyeR, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(ex2, ey2, eyeR, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#111';
+      const dx = direction.x || 0;
+      const dy = direction.y || 0;
+      ctx.beginPath(); ctx.arc(ex1 + dx * 1.2, ey1 + dy * 1.2, 1.4, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(ex2 + dx * 1.2, ey2 + dy * 1.2, 1.4, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  // particles (no shadows for performance)
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.06;
+    p.life -= p.decay;
+    if (p.life <= 0) { particles.splice(i, 1); continue; }
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 4;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
+
+  // overlays
+  if (gameOver) {
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#ff6b6b';
+    ctx.font = 'bold 40px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('GAME OVER', W / 2, H / 2 - 20);
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.font = '16px sans-serif';
+    ctx.fillText('Нажми «Новая игра»', W / 2, H / 2 + 30);
+  }
+
+  if (win) {
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#6bcb77';
+    ctx.font = 'bold 38px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('ПОБЕДА!', W / 2, H / 2 - 20);
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.font = '16px sans-serif';
+    ctx.fillText('Ты заполнил всё поле!', W / 2, H / 2 + 30);
+  }
+}
+
+// ---- GAME LOOP ----
+function frame(now) {
+  if (!gameOver && !win && now - lastMove >= speed) {
+    if (autoPlay && !pendingDir) {
+      const move = computeAIMove();
+      if (move) {
+        pendingDir = {x: move.dx, y: move.dy};
+      }
+    }
+    update();
+    lastMove = now;
+  }
+  draw(now);
+  requestAnimationFrame(frame);
+}
+
+// ---- INPUT ----
+document.addEventListener('keydown', e => {
+  const map = {
+    ArrowUp: {x:0,y:-1}, ArrowDown: {x:0,y:1},
+    ArrowLeft: {x:-1,y:0}, ArrowRight: {x:1,y:0},
+    w: {x:0,y:-1}, W: {x:0,y:-1},
+    s: {x:0,y:1}, S: {x:0,y:1},
+    a: {x:-1,y:0}, A: {x:-1,y:0},
+    d: {x:1,y:0}, D: {x:1,y:0},
+  };
+  const nd = map[e.key];
+  if (!nd) return;
+  e.preventDefault();
+
+  if (gameOver || win) return;
+  const current = pendingDir || direction;
+  if (nd.x + current.x === 0 && nd.y + current.y === 0) return;
+  pendingDir = nd;
+});
+
+let touchStart = null;
+canvas.addEventListener('touchstart', e => {
+  touchStart = { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+}, { passive: true });
+
+canvas.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+
+canvas.addEventListener('touchend', e => {
+  if (!touchStart || gameOver || win) return;
+  const dx = e.changedTouches[0].clientX - touchStart.x;
+  const dy = e.changedTouches[0].clientY - touchStart.y;
+  touchStart = null;
+
+  if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+
+  let nd;
+  if (Math.abs(dx) > Math.abs(dy)) {
+    nd = dx > 0 ? {x:1,y:0} : {x:-1,y:0};
+  } else {
+    nd = dy > 0 ? {x:0,y:1} : {x:0,y:-1};
+  }
+
+  const current = pendingDir || direction;
+  if (nd.x + current.x === 0 && nd.y + current.y === 0) return;
+  pendingDir = nd;
+}, { passive: true });
+
+document.getElementById('restartBtn').addEventListener('click', () => {
+  init();
+  if (autoPlay) {
+    statusEl.textContent = 'Режим ИИ';
+  } else {
+    statusEl.textContent = 'Новая игра!';
+  }
+});
+
+document.getElementById('autoBtn').addEventListener('click', toggleAutoPlay);
+
+const speedSlider = document.getElementById('speedSlider');
+const speedValue = document.getElementById('speedValue');
+baseSpeed = +speedSlider.value;
+
+speedSlider.addEventListener('input', () => {
+  baseSpeed = +speedSlider.value;
+  speed = baseSpeed;
+  speedValue.textContent = baseSpeed;
+});
+
+init();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
