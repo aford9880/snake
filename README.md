@@ -34,4 +34,4 @@
 
 ## Screenshot
 
-![Screenshot](screenshot.png)
+![Screenshot](image.png)
