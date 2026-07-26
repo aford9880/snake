@@ -155,6 +155,17 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* CSS-монета вместо эмодзи 🪙 — на Windows 10 этой эмодзи нет в шрифте */
+.coin-ico {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #ffe9a0, #ffd93d 55%, #d69e20);
+  border: 1px solid rgba(184, 134, 11, 0.8);
+  vertical-align: -1px;
+}
+
 .high-score {
   color: rgba(255,255,255,0.3);
   font-size: 13px;

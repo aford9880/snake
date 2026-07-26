@@ -319,8 +319,10 @@ function update() {
 }
 
 /* ==== OVERLAY (Game Over / Победа) ==== */
+const COIN_ICO = '<span class="coin-ico"></span>';
+
 function overlaySubHTML() {
-  return `Счёт: <b>${score}</b> &nbsp;·&nbsp; Монеты за игру: 🪙 ${coinsThisRun}`;
+  return `Счёт: <b>${score}</b> &nbsp;·&nbsp; Монеты за игру: ${COIN_ICO} ${coinsThisRun}`;
 }
 
 function showGameOverOverlay() {
@@ -335,7 +337,7 @@ function showGameOverOverlay() {
 function showWinOverlay() {
   overlayTitle.textContent = 'ПОБЕДА!';
   overlayTitle.style.color = '#6bcb77';
-  overlaySub.innerHTML = `Ты заполнил всё поле! +100 🪙<br>${overlaySubHTML()}`;
+  overlaySub.innerHTML = `Ты заполнил всё поле! +100 ${COIN_ICO}<br>${overlaySubHTML()}`;
   reviveBtn.classList.add('hidden');
   x2Btn.classList.toggle('hidden', x2Used || score === 0);
   overlayEl.classList.remove('hidden');
@@ -480,7 +482,7 @@ function renderShop() {
         });
       });
     } else {
-      btn.textContent = `Купить · 🪙 ${s.cost}`;
+      btn.innerHTML = `Купить · ${COIN_ICO} ${s.cost}`;
       btn.disabled = save.coins < s.cost;
       btn.addEventListener('click', () => {
         if (save.coins < s.cost) return;
