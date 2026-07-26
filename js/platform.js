@@ -12,7 +12,6 @@
  * не трогая код игры: достаточно написать вторую реализацию этих же методов.
  */
 const Platform = (() => {
-  const SDK_URL = 'https://yandex.ru/games/sdk/v2';
   const LEADERBOARD_NAME = 'snakeScore';      // техническое имя, создаётся в консоли Яндекс Игр
   const INTERSTITIAL_COOLDOWN = 65000;        // не чаще раза в ~минуту (требование площадки)
   const LOCAL_SAVE_KEY = 'snakeSave';
@@ -20,30 +19,21 @@ const Platform = (() => {
   let ysdk = null;
   let player = null;
   let leaderboards = null;
+  let language = 'ru';
   let lastInterstitial = 0;
   let gamesPlayed = 0;
 
-  function loadScript(src, timeout) {
-    return new Promise((resolve, reject) => {
-      const s = document.createElement('script');
-      const timer = setTimeout(() => reject(new Error('SDK script timeout')), timeout);
-      s.src = src;
-      s.onload = () => { clearTimeout(timer); resolve(); };
-      s.onerror = () => { clearTimeout(timer); reject(new Error('SDK script load error')); };
-      document.head.appendChild(s);
-    });
-  }
-
   async function init() {
-    // Вне iframe Яндекс Игр SDK работать не может (нет родительского окна
-    // для postMessage) — сразу включаем локальный режим разработки.
-    if (window.self === window.top) {
-      console.warn('YSDK: запуск вне Яндекс Игр — локальный режим разработки');
-      return;
-    }
     try {
-      await loadScript(SDK_URL, 5000);
-      ysdk = await YaGames.init();
+      if (typeof YaGames === 'undefined') {
+        throw new Error('Yandex Games SDK is not loaded');
+      }
+      // The promise is created in <head> immediately after /sdk.js.  That
+      // makes the SDK init event visible to the Yandex Games debug panel
+      // before the rest of the game finishes booting.
+      ysdk = await (window.__yandexSdkPromise || YaGames.init());
+      language = ysdk.environment?.i18n?.lang || 'ru';
+      document.documentElement.lang = language;
       try {
         player = await ysdk.getPlayer({ scopes: false });
       } catch (e) {
@@ -79,6 +69,7 @@ const Platform = (() => {
     const modal = document.getElementById('adSim');
     const bar = document.getElementById('adProgressBar');
     modal.classList.remove('hidden');
+    window.dispatchEvent(new Event('yandex-ad-open'));
     bar.style.transition = 'none';
     bar.style.width = '0%';
     requestAnimationFrame(() => {
@@ -87,6 +78,7 @@ const Platform = (() => {
     });
     setTimeout(() => {
       modal.classList.add('hidden');
+      window.dispatchEvent(new Event('yandex-ad-close'));
       done();
     }, 1700);
   }
@@ -110,8 +102,9 @@ const Platform = (() => {
     }
     ysdk.adv.showFullscreenAdv({
       callbacks: {
-        onClose: () => onDone(),
-        onError: (e) => { console.warn('Interstitial error', e); onDone(); },
+        onOpen: () => window.dispatchEvent(new Event('yandex-ad-open')),
+        onClose: () => { window.dispatchEvent(new Event('yandex-ad-close')); onDone(); },
+        onError: (e) => { console.warn('Interstitial error', e); window.dispatchEvent(new Event('yandex-ad-close')); onDone(); },
       },
     });
   }
@@ -128,9 +121,10 @@ const Platform = (() => {
     let rewarded = false;
     ysdk.adv.showRewardedVideo({
       callbacks: {
+        onOpen: () => window.dispatchEvent(new Event('yandex-ad-open')),
         onRewarded: () => { rewarded = true; },
-        onClose: () => { if (rewarded) onReward(); else onFail?.(); },
-        onError: (e) => { console.warn('Rewarded error', e); onFail?.(); },
+        onClose: () => { window.dispatchEvent(new Event('yandex-ad-close')); if (rewarded) onReward(); else onFail?.(); },
+        onError: (e) => { console.warn('Rewarded error', e); window.dispatchEvent(new Event('yandex-ad-close')); onFail?.(); },
       },
     });
   }
@@ -176,5 +170,6 @@ const Platform = (() => {
     gameplayStart, gameplayStop,
     showInterstitial, showRewarded,
     loadData, saveData, submitScore,
+    getLanguage: () => language,
   };
 })();

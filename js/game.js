@@ -97,6 +97,24 @@ function sound(name) {
 
 document.addEventListener('keydown', ensureAudio);
 document.addEventListener('pointerdown', ensureAudio);
+canvas.addEventListener('contextmenu', (event) => event.preventDefault());
+
+function pauseAudio() {
+  if (audioCtx?.state === 'running') audioCtx.suspend();
+}
+
+function resumeAudio() {
+  if (!save.muted && audioCtx?.state === 'suspended') audioCtx.resume();
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) pauseAudio();
+  else resumeAudio();
+});
+window.addEventListener('blur', pauseAudio);
+window.addEventListener('focus', resumeAudio);
+window.addEventListener('yandex-ad-open', pauseAudio);
+window.addEventListener('yandex-ad-close', resumeAudio);
 
 /* ==== GAME STATE ==== */
 let snake, prevSnake, food, specialFood, direction, pendingDir, score, gameOver, win;
