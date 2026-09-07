@@ -3,22 +3,31 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Змейка</title>
-<link rel="stylesheet" href="css/style.css">
-<!-- Yandex Games SDK must load in <head> before YaGames.init() is called. -->
-<script src="/sdk.js"></script>
-<script>
-  // Initialise immediately after the official loader so Yandex can record init.
-  window.__yandexSdkPromise = YaGames.init();
-</script>
+<title>Змейка: Автопилот</title>
+<link rel="stylesheet" href="css/style.css?v=6">
+<!--
+  Платформенный bootstrap. В репозитории маркер пуст: игра открывается локально
+  на mock-платформе без единого SDK. При сборке под площадку tools/build.mjs
+  подставляет сюда её загрузчик (например, /sdk.js Яндекс Игр), потому что
+  площадки требуют инициализировать SDK как можно раньше, ещё в <head>.
+-->
+<!--PLATFORM_HEAD-->
 </head>
 <body>
 <div class="bg-grid"></div>
 
+<!-- Visible from the first HTML paint. Removed only after the game has drawn once. -->
+<div id="loadingScreen" class="loading-screen" role="status" aria-live="polite" aria-label="Loading game">
+  <div class="loading-card">
+    <div class="loading-spinner" aria-hidden="true"></div>
+    <span data-i18n="loading">Загрузка…</span>
+  </div>
+</div>
+
 <div class="game-row">
   <!-- Вертикальный слайдер скорости -->
   <div class="speed-side">
-    <div class="speed-side-label">Скорость</div>
+    <label class="speed-side-label" for="speedSlider" data-i18n="speed">Скорость</label>
     <input type="range" id="speedSlider" min="3" max="500" value="160" step="1">
     <span id="speedValue">160</span>
   </div>
@@ -27,76 +36,67 @@
   <div class="game-column">
     <div class="header">
       <div class="score-wrap">
-        <span class="score-label">Счёт</span>
+        <span class="score-label" data-i18n="score">Счёт</span>
         <span class="score" id="score">0</span>
       </div>
       <div class="stats">
         <div class="coins"><span class="coin-ico"></span> <span id="coins">0</span></div>
-        <div class="high-score">Рекорд: <span id="highScore">0</span></div>
+        <div class="high-score"><span data-i18n="highScore">Рекорд:</span> <span id="highScore">0</span></div>
       </div>
     </div>
 
     <div class="toolbar">
       <div class="mode-chips" id="modeChips"></div>
       <div class="icon-btns">
-        <button class="icon-btn" id="shopBtn" title="Магазин скинов">🛍️</button>
-        <button class="icon-btn" id="muteBtn" title="Звук">🔊</button>
-        <button class="icon-btn" id="pauseBtn" title="Пауза (P)">⏸️</button>
+        <button type="button" class="icon-btn" id="shopBtn" title="Магазин скинов" aria-label="Магазин скинов" data-i18n-title="shopTitle" data-i18n-aria-label="shopTitle">🛍️</button>
+        <button type="button" class="icon-btn" id="muteBtn" title="Звук" aria-label="Звук" data-i18n-title="soundTitle" data-i18n-aria-label="soundTitle">🔊</button>
+        <button type="button" class="icon-btn" id="pauseBtn" title="Пауза (P)" aria-label="Пауза (P)" data-i18n-title="pauseTitle" data-i18n-aria-label="pauseTitle">⏸️</button>
       </div>
     </div>
 
     <div class="canvas-container">
-      <canvas id="game" width="500" height="500"></canvas>
+      <canvas id="game" width="500" height="500" draggable="false" tabindex="-1" aria-label="Игровое поле" data-i18n-aria-label="gameField"></canvas>
 
-      <!-- Экран Game Over / Победа -->
+      <!-- Экран поражения / победы -->
       <div id="overlay" class="overlay hidden">
-        <h2 id="overlayTitle">GAME OVER</h2>
+        <h2 id="overlayTitle" data-i18n="gameOver">ИГРА ОКОНЧЕНА</h2>
         <p id="overlaySub"></p>
         <div class="overlay-btns">
-          <button id="reviveBtn" class="ad-btn">📺 Возродиться</button>
-          <button id="x2Btn" class="ad-btn">📺 Удвоить очки</button>
-          <button id="overlayRestart">Новая игра</button>
+          <button type="button" id="reviveBtn" class="ad-btn" data-i18n="revive">📺 Возродиться</button>
+          <button type="button" id="x2Btn" class="ad-btn" data-i18n="doubleScore">📺 Удвоить очки</button>
+          <button type="button" id="overlayRestart" data-i18n="newGame">Новая игра</button>
         </div>
       </div>
     </div>
 
     <div class="hud">
-      <span id="status">← ↑ → ↓ / WASD · P — пауза</span>
+      <span id="status" data-i18n="controlsHint">← ↑ → ↓ / WASD · P — пауза</span>
       <div style="display:flex;gap:8px">
-        <button id="autoBtn">✨ Авто</button>
-        <button id="restartBtn">Новая игра</button>
+        <button type="button" id="autoBtn" data-i18n="auto">✨ Авто</button>
+        <button type="button" id="restartBtn" data-i18n="newGame">Новая игра</button>
       </div>
     </div>
 
     <div class="controls-hint">
-      <span id="modeLabel">🎮 Управление: ручное</span>
+      <span id="modeLabel" data-i18n="manualControl">🎮 Управление: ручное</span>
     </div>
   </div>
 </div>
 
 <!-- Магазин скинов -->
-<div id="shopModal" class="modal hidden">
+<div id="shopModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="shopTitle">
   <div class="modal-card">
     <div class="modal-head">
-      <h2>Магазин скинов</h2>
+      <h2 id="shopTitle" data-i18n="shopTitle">Магазин скинов</h2>
       <div class="coins"><span class="coin-ico"></span> <span id="shopCoins">0</span></div>
-      <button class="icon-btn" id="shopClose">✕</button>
+      <button type="button" class="icon-btn" id="shopClose" aria-label="Закрыть магазин" data-i18n-aria-label="closeShop">✕</button>
     </div>
     <div id="skinList" class="skin-list"></div>
-    <p class="shop-hint">Монеты начисляются за еду: +1 за обычную, +5 за бонусную ⭐, +100 за победу</p>
+    <p class="shop-hint" data-i18n="shopHint">Монеты начисляются за еду: +1 за обычную, +5 за бонусную ⭐, +100 за победу</p>
   </div>
 </div>
 
-<!-- Симуляция рекламы при локальной разработке (вне Яндекс Игр) -->
-<div id="adSim" class="modal hidden">
-  <div class="modal-card ad-sim-card">
-    <h2>📺 Реклама</h2>
-    <p>Локальная симуляция рекламы.<br>На Яндекс Играх здесь будет настоящий ролик.</p>
-    <div class="ad-progress"><div id="adProgressBar"></div></div>
-  </div>
-</div>
-
-<script src="js/platform.js"></script>
-<script src="js/game.js"></script>
+<!-- Единственная точка входа: composition root собирает платформу и запускает игру. -->
+<script type="module" src="js/boot.js"></script>
 </body>
 </html>

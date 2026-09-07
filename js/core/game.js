@@ -1,7 +1,21 @@
-'use strict';
+/*
+ * Game Core — вся игровая логика.
+ *
+ * Модуль не знает, на какой площадке запущен: он импортирует только
+ * абстракции платформенного слоя (константы событий) и получает готовый набор
+ * сервисов извне, через startGame(). Прямых обращений к SDK здесь нет и быть
+ * не должно.
+ */
+
+import { I18n } from './i18n.js';
+import { PlatformEvent } from '../platform/core/events.js';
+
+/* Сервисы площадки. Заполняется один раз в startGame(). */
+let platform = null;
 
 /* ==== DOM ==== */
 const canvas = document.getElementById('game');
+const gameSurface = canvas.closest('.canvas-container');
 const ctx = canvas.getContext('2d');
 const scoreEl = document.getElementById('score');
 const highScoreEl = document.getElementById('highScore');
@@ -20,6 +34,73 @@ const shopCoinsEl = document.getElementById('shopCoins');
 const skinListEl = document.getElementById('skinList');
 const muteBtn = document.getElementById('muteBtn');
 const pauseBtn = document.getElementById('pauseBtn');
+const loadingScreen = document.getElementById('loadingScreen');
+const tr = (key, params) => I18n.t(key, params);
+
+/* Input stays closed while platform data and the initial frame are prepared. */
+let gameReadyForInput = false;
+
+/* TV remote arrows steer only during a live round; elsewhere they navigate UI. */
+function isElementVisible(element) {
+  return !element.disabled
+    && !element.closest('.hidden')
+    && element.getClientRects().length > 0;
+}
+
+function isUiFocusMode() {
+  return paused
+    || !overlayEl.classList.contains('hidden')
+    || !shopModal.classList.contains('hidden')
+    || isUiControl(document.activeElement);
+}
+
+function isUiControl(element) {
+  return element instanceof HTMLElement
+    && element.matches('button, input')
+    && isElementVisible(element);
+}
+
+function focusGameSurface() {
+  canvas.focus({ preventScroll: true });
+}
+
+function visibleButtons() {
+  const scope = !shopModal.classList.contains('hidden')
+    ? shopModal
+    : !overlayEl.classList.contains('hidden')
+      ? overlayEl
+      : document;
+  return [...scope.querySelectorAll('button')].filter(isElementVisible);
+}
+
+function focusButton(button) {
+  if (isElementVisible(button)) button.focus({ preventScroll: true });
+}
+
+function moveUiFocus(step) {
+  const buttons = visibleButtons();
+  if (!buttons.length) return;
+  const current = buttons.indexOf(document.activeElement);
+  const next = current < 0 ? 0 : (current + step + buttons.length) % buttons.length;
+  focusButton(buttons[next]);
+}
+
+function setGameInputEnabled(enabled) {
+  gameReadyForInput = enabled;
+  document.querySelectorAll('button, input').forEach((element) => {
+    element.disabled = !enabled;
+  });
+}
+
+function openGame() {
+  gameReadyForInput = true;
+  setGameInputEnabled(true);
+  loadingScreen.classList.add('is-hidden');
+  platform.lifecycle.notifyReady();
+  platform.lifecycle.gameplayStart();
+}
+
+setGameInputEnabled(false);
 
 /* ==== CONSTANTS ==== */
 const W = 500, H = 500;
@@ -28,21 +109,21 @@ const CELL = W / COLS;
 const OBSTACLE_COUNT = 14;
 
 const SKINS = [
-  { id: 'classic', name: 'Классика', cost: 0,    head: [130, 230, 90],  tail: [80, 190, 255] },
-  { id: 'neon',    name: 'Неон',     cost: 150,  head: [255, 107, 255], tail: [77, 150, 255] },
-  { id: 'fire',    name: 'Огонь',    cost: 300,  head: [255, 217, 61],  tail: [255, 80, 80] },
-  { id: 'ghost',   name: 'Призрак',  cost: 0, ad: true, head: [245, 245, 255], tail: [110, 120, 150] },
-  { id: 'gold',    name: 'Золото',   cost: 600,  head: [255, 245, 170], tail: [214, 158, 32] },
-  { id: 'rainbow', name: 'Радуга',   cost: 1000, rainbow: true },
+  { id: 'classic', nameKey: 'skinClassic', cost: 0,    head: [130, 230, 90],  tail: [80, 190, 255] },
+  { id: 'neon',    nameKey: 'skinNeon',    cost: 150,  head: [255, 107, 255], tail: [77, 150, 255] },
+  { id: 'fire',    nameKey: 'skinFire',    cost: 300,  head: [255, 217, 61],  tail: [255, 80, 80] },
+  { id: 'ghost',   nameKey: 'skinGhost',   cost: 0, ad: true, head: [245, 245, 255], tail: [110, 120, 150] },
+  { id: 'gold',    nameKey: 'skinGold',    cost: 600,  head: [255, 245, 170], tail: [214, 158, 32] },
+  { id: 'rainbow', nameKey: 'skinRainbow', cost: 1000, rainbow: true },
 ];
 
 const MODES = [
-  { id: 'classic',   name: 'Классика' },
-  { id: 'wrap',      name: 'Без стен' },
-  { id: 'obstacles', name: 'Препятствия' },
+  { id: 'classic',   nameKey: 'modeClassic' },
+  { id: 'wrap',      nameKey: 'modeWrap' },
+  { id: 'obstacles', nameKey: 'modeObstacles' },
 ];
 
-/* ==== SAVE (монеты, рекорд, скины — синхронизируется через Platform) ==== */
+/* ==== SAVE (монеты, рекорд, скины — уходит в StorageService платформы) ==== */
 let save = {
   coins: 0,
   highScore: 0,
@@ -53,7 +134,8 @@ let save = {
 };
 
 function persist() {
-  Platform.saveData(save);
+  /* Запись не блокирует игру и никогда не бросает наружу ошибку платформы. */
+  platform.storage.save(save).catch(e => console.warn('Save failed', e));
 }
 
 /* ==== SOUND (WebAudio, без внешних файлов) ==== */
@@ -97,15 +179,35 @@ function sound(name) {
 
 document.addEventListener('keydown', ensureAudio);
 document.addEventListener('pointerdown', ensureAudio);
-canvas.addEventListener('contextmenu', (event) => event.preventDefault());
+
+/*
+ * The whole board, including an end-of-round overlay, is a game surface.
+ * Capture-phase listeners are intentional: a canvas or a browser-specific
+ * gesture handler must never get a chance to open a context menu or start a
+ * text selection before the event bubbles to a child element.
+ */
+for (const eventName of ['contextmenu', 'selectstart', 'dragstart']) {
+  gameSurface.addEventListener(eventName, (event) => event.preventDefault(), true);
+}
+
+/* Safari can show a callout on a long press before pointer handlers run. */
+gameSurface.addEventListener('touchstart', (event) => {
+  if (event.target.closest('canvas')) event.preventDefault();
+}, { capture: true, passive: false });
+
+gameSurface.addEventListener('pointerdown', (event) => {
+  if (event.target.closest('canvas')) event.preventDefault();
+}, { capture: true, passive: false });
 
 function pauseAudio() {
   if (audioCtx?.state === 'running') audioCtx.suspend();
 }
 
 function resumeAudio() {
-  if (!save.muted && audioCtx?.state === 'suspended') audioCtx.resume();
+  if (!platformPaused && !save.muted && audioCtx?.state === 'suspended') audioCtx.resume();
 }
+
+let platformPaused = false;
 
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) pauseAudio();
@@ -113,8 +215,24 @@ document.addEventListener('visibilitychange', () => {
 });
 window.addEventListener('blur', pauseAudio);
 window.addEventListener('focus', resumeAudio);
-window.addEventListener('yandex-ad-open', pauseAudio);
-window.addEventListener('yandex-ad-close', resumeAudio);
+
+/*
+ * События площадки приходят уже в собственных терминах проекта: показ рекламы
+ * и просьба хоста приостановить игру. Какой именно SDK их породил, игра не знает.
+ */
+function subscribePlatformEvents() {
+  platform.on(PlatformEvent.AD_OPEN, pauseAudio);
+  platform.on(PlatformEvent.AD_CLOSE, resumeAudio);
+  platform.on(PlatformEvent.PAUSE, () => {
+    platformPaused = true;
+    pauseAudio();
+  });
+  platform.on(PlatformEvent.RESUME, () => {
+    platformPaused = false;
+    lastMove = performance.now();
+    if (!paused && !gameOver && !win) resumeAudio();
+  });
+}
 
 /* ==== GAME STATE ==== */
 let snake, prevSnake, food, specialFood, direction, pendingDir, score, gameOver, win;
@@ -182,21 +300,22 @@ function init() {
   obstacles = save.mode === 'obstacles' ? generateObstacles() : [];
   obstacleSet = new Set(obstacles.map(p => `${p.x},${p.y}`));
   scoreEl.textContent = '0';
-  statusEl.textContent = 'Игра началась';
+  statusEl.textContent = tr('gameStarted');
   hideOverlay();
   updatePauseBtn();
   placeFood();
   specialFood = null;
-  Platform.gameplayStart();
+  if (gameReadyForInput) platform.lifecycle.gameplayStart();
 }
 
-function newGame(withAd) {
+async function newGame(withAd) {
+  if (!gameReadyForInput) return;
   sound('click');
-  if (withAd) {
-    Platform.showInterstitial(() => init());
-  } else {
-    init();
-  }
+  /* Реклама между раундами: показана она или пропущена площадкой — игра
+   * продолжается в обоих случаях. */
+  if (withAd) await platform.ads.showInterstitial();
+  init();
+  focusGameSurface();
 }
 
 function placeFood() {
@@ -250,14 +369,14 @@ function die(msg) {
   statusEl.textContent = msg;
   sound('die');
   spawnParticles(snake[0].x, snake[0].y, '#ff6b6b', 20);
-  Platform.gameplayStop();
-  Platform.submitScore(score);
+  platform.lifecycle.gameplayStop();
+  platform.leaderboard.submitScore(score);
   persist();
   showGameOverOverlay();
 }
 
 function update() {
-  if (gameOver || win || paused) return false;
+  if (gameOver || win || paused || platformPaused) return false;
 
   if (pendingDir) {
     const nd = pendingDir;
@@ -270,20 +389,20 @@ function update() {
   const hd = snake[0];
   const st = stepPos(hd.x, hd.y, direction.x, direction.y);
   if (!st.ok) {
-    die('Столкновение со стеной!');
+    die(tr('hitWall'));
     return true;
   }
   const head = { x: st.nx, y: st.ny };
 
   if (obstacleSet.has(`${head.x},${head.y}`)) {
-    die('Врезался в препятствие!');
+    die(tr('hitObstacle'));
     return true;
   }
 
   const willEat = food && head.x === food.x && head.y === food.y;
   const bodyCheck = willEat ? snake : snake.slice(0, -1);
   if (bodyCheck.some(p => p.x === head.x && p.y === head.y)) {
-    die('Самоедство!');
+    die(tr('hitSelf'));
     return true;
   }
 
@@ -299,17 +418,17 @@ function update() {
     spawnParticles(food.x, food.y, '#ffd93d');
     placeFood();
     if (win) {
-      statusEl.textContent = 'Победа! Поле заполнено!';
+      statusEl.textContent = tr('fieldFilled');
       addCoins(100);
-      Platform.gameplayStop();
-      Platform.submitScore(score);
+      platform.lifecycle.gameplayStop();
+      platform.leaderboard.submitScore(score);
       persist();
       showWinOverlay();
       return true;
     }
     if (score % 50 === 0 && speed > 60) {
       speed = Math.max(60, speed - 8);
-      statusEl.textContent = 'Скорость увеличена!';
+      statusEl.textContent = tr('speedIncreased');
     } else {
       statusEl.textContent = score % 50 === 0 ? '' : '+10';
     }
@@ -325,7 +444,7 @@ function update() {
     sound('special');
     spawnParticles(specialFood.x, specialFood.y, '#ff6bff', 26);
     specialFood = null;
-    statusEl.textContent = 'Бонус! +30';
+    statusEl.textContent = tr('bonus');
   }
 
   if (score > save.highScore) {
@@ -336,29 +455,37 @@ function update() {
   return true;
 }
 
-/* ==== OVERLAY (Game Over / Победа) ==== */
+/* ==== OVERLAY (поражение / победа) ==== */
 const COIN_ICO = '<span class="coin-ico"></span>';
 
 function overlaySubHTML() {
-  return `Счёт: <b>${score}</b> &nbsp;·&nbsp; Монеты за игру: ${COIN_ICO} ${coinsThisRun}`;
+  return tr('runSummary', { score, coin: COIN_ICO, coins: coinsThisRun });
+}
+
+/* Кнопки за рекламу показываем, только если площадка вообще умеет rewarded.
+ * Проверяем возможность, а не название платформы. */
+function rewardedAvailable() {
+  return platform.capabilities.rewarded;
 }
 
 function showGameOverOverlay() {
-  overlayTitle.textContent = 'GAME OVER';
+  overlayTitle.textContent = tr('gameOver');
   overlayTitle.style.color = '#ff6b6b';
   overlaySub.innerHTML = overlaySubHTML();
-  reviveBtn.classList.toggle('hidden', reviveUsed);
-  x2Btn.classList.toggle('hidden', x2Used || score === 0);
+  reviveBtn.classList.toggle('hidden', reviveUsed || !rewardedAvailable());
+  x2Btn.classList.toggle('hidden', x2Used || score === 0 || !rewardedAvailable());
   overlayEl.classList.remove('hidden');
+  focusButton(overlayRestart);
 }
 
 function showWinOverlay() {
-  overlayTitle.textContent = 'ПОБЕДА!';
+  overlayTitle.textContent = tr('victory');
   overlayTitle.style.color = '#6bcb77';
-  overlaySub.innerHTML = `Ты заполнил всё поле! +100 ${COIN_ICO}<br>${overlaySubHTML()}`;
+  overlaySub.innerHTML = tr('victoryDetails', { coin: COIN_ICO, summary: overlaySubHTML() });
   reviveBtn.classList.add('hidden');
-  x2Btn.classList.toggle('hidden', x2Used || score === 0);
+  x2Btn.classList.toggle('hidden', x2Used || score === 0 || !rewardedAvailable());
   overlayEl.classList.remove('hidden');
+  focusButton(overlayRestart);
 }
 
 function hideOverlay() {
@@ -366,8 +493,9 @@ function hideOverlay() {
 }
 
 /* Возрождение за rewarded: счёт и монеты сохраняются, змейка стартует заново. */
-reviveBtn.addEventListener('click', () => {
-  Platform.showRewarded(() => {
+reviveBtn.addEventListener('click', async () => {
+  const result = await platform.ads.showRewarded();
+  if (result.rewarded) {
     reviveUsed = true;
     gameOver = false;
     const mid = Math.floor(COLS / 2);
@@ -378,18 +506,20 @@ reviveBtn.addEventListener('click', () => {
     movesSinceLastEat = 0;
     lastMove = 0;
     hideOverlay();
+    focusGameSurface();
     placeFood();
-    statusEl.textContent = 'Второй шанс!';
+    statusEl.textContent = tr('secondChance');
     sound('revive');
-    Platform.gameplayStart();
-  }, () => {
-    statusEl.textContent = 'Реклама не досмотрена';
-  });
+    platform.lifecycle.gameplayStart();
+  } else {
+    statusEl.textContent = tr('adNotCompleted');
+  }
 });
 
 /* Удвоение финального счёта за rewarded. */
-x2Btn.addEventListener('click', () => {
-  Platform.showRewarded(() => {
+x2Btn.addEventListener('click', async () => {
+  const result = await platform.ads.showRewarded();
+  if (result.rewarded) {
     x2Used = true;
     score *= 2;
     scoreEl.textContent = score;
@@ -397,14 +527,14 @@ x2Btn.addEventListener('click', () => {
       save.highScore = score;
       highScoreEl.textContent = save.highScore;
     }
-    Platform.submitScore(score);
+    platform.leaderboard.submitScore(score);
     persist();
     sound('coin');
     overlaySub.innerHTML = overlaySubHTML() + ' &nbsp;·&nbsp; <b style="color:#ffd93d">x2!</b>';
     x2Btn.classList.add('hidden');
-  }, () => {
-    statusEl.textContent = 'Реклама не досмотрена';
-  });
+  } else {
+    statusEl.textContent = tr('adNotCompleted');
+  }
 });
 
 overlayRestart.addEventListener('click', () => newGame(true));
@@ -415,15 +545,18 @@ function updatePauseBtn() {
 }
 
 function togglePause() {
+  if (!gameReadyForInput) return;
   if (gameOver || win) return;
   paused = !paused;
   updatePauseBtn();
-  statusEl.textContent = paused ? 'Пауза' : 'Поехали!';
+  statusEl.textContent = paused ? tr('paused') : tr('letsGo');
   if (paused) {
-    Platform.gameplayStop();
+    platform.lifecycle.gameplayStop();
+    focusButton(pauseBtn);
   } else {
     lastMove = performance.now();
-    Platform.gameplayStart();
+    platform.lifecycle.gameplayStart();
+    focusGameSurface();
   }
   sound('click');
 }
@@ -435,8 +568,11 @@ function renderModes() {
   modeChipsEl.innerHTML = '';
   for (const m of MODES) {
     const b = document.createElement('button');
+    b.type = 'button';
     b.className = 'chip' + (save.mode === m.id ? ' active' : '');
-    b.textContent = m.name;
+    b.textContent = tr(m.nameKey);
+    b.setAttribute('aria-pressed', String(save.mode === m.id));
+    b.disabled = !gameReadyForInput;
     b.addEventListener('click', () => {
       if (save.mode === m.id) return;
       save.mode = m.id;
@@ -473,14 +609,15 @@ function renderShop() {
 
     const name = document.createElement('div');
     name.className = 'skin-name';
-    name.textContent = s.name;
+    name.textContent = tr(s.nameKey);
 
     const btn = document.createElement('button');
+    btn.type = 'button';
     if (selected) {
-      btn.textContent = 'Выбран';
+      btn.textContent = tr('selected');
       btn.disabled = true;
     } else if (owned) {
-      btn.textContent = 'Выбрать';
+      btn.textContent = tr('select');
       btn.addEventListener('click', () => {
         save.selectedSkin = s.id;
         persist();
@@ -488,19 +625,19 @@ function renderShop() {
         renderShop();
       });
     } else if (s.ad) {
-      btn.textContent = '📺 За рекламу';
+      btn.textContent = tr('watchAd');
       btn.className = 'ad-btn';
-      btn.addEventListener('click', () => {
-        Platform.showRewarded(() => {
-          save.skins.push(s.id);
-          save.selectedSkin = s.id;
-          persist();
-          sound('coin');
-          renderShop();
-        });
+      btn.addEventListener('click', async () => {
+        const result = await platform.ads.showRewarded();
+        if (!result.rewarded) return;
+        save.skins.push(s.id);
+        save.selectedSkin = s.id;
+        persist();
+        sound('coin');
+        renderShop();
       });
     } else {
-      btn.innerHTML = `Купить · ${COIN_ICO} ${s.cost}`;
+      btn.innerHTML = tr('buy', { coin: COIN_ICO, cost: s.cost });
       btn.disabled = save.coins < s.cost;
       btn.addEventListener('click', () => {
         if (save.coins < s.cost) return;
@@ -521,19 +658,27 @@ function renderShop() {
   }
 }
 
-document.getElementById('shopBtn').addEventListener('click', () => {
+function openShop() {
   renderShop();
   shopModal.classList.remove('hidden');
   if (!paused && !gameOver && !win) togglePause();
-});
+  focusButton(document.getElementById('shopClose'));
+}
+
+function closeShop() {
+  shopModal.classList.add('hidden');
+  focusButton(document.getElementById('shopBtn'));
+}
+
+document.getElementById('shopBtn').addEventListener('click', openShop);
 
 document.getElementById('shopClose').addEventListener('click', () => {
-  shopModal.classList.add('hidden');
+  closeShop();
   sound('click');
 });
 
 shopModal.addEventListener('click', (e) => {
-  if (e.target === shopModal) shopModal.classList.add('hidden');
+  if (e.target === shopModal) closeShop();
 });
 
 /* ==== ЗВУК ON/OFF ==== */
@@ -718,15 +863,15 @@ function toggleAutoPlay() {
   autoPlay = !autoPlay;
   const btn = document.getElementById('autoBtn');
   if (autoPlay) {
-    btn.textContent = '✨ Авто ON';
+    btn.textContent = tr('autoOn');
     btn.style.background = 'linear-gradient(135deg,#ff6b6b,#ffa94d)';
-    modeLabel.textContent = '✨ Управление: ИИ';
-    statusEl.textContent = 'Режим ИИ';
+    modeLabel.textContent = tr('aiControl');
+    statusEl.textContent = tr('aiMode');
   } else {
-    btn.textContent = '✨ Авто';
+    btn.textContent = tr('auto');
     btn.style.background = '';
-    modeLabel.textContent = '🎮 Управление: ручное';
-    statusEl.textContent = 'Ручной режим';
+    modeLabel.textContent = tr('manualControl');
+    statusEl.textContent = tr('manualMode');
   }
 }
 
@@ -929,10 +1074,10 @@ function draw(now) {
     ctx.font = 'bold 34px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('ПАУЗА', W / 2, H / 2 - 12);
+    ctx.fillText(tr('pauseCanvas'), W / 2, H / 2 - 12);
     ctx.fillStyle = 'rgba(255,255,255,0.45)';
     ctx.font = '15px sans-serif';
-    ctx.fillText('P — продолжить', W / 2, H / 2 + 26);
+    ctx.fillText(tr('resumeCanvas'), W / 2, H / 2 + 26);
   }
 }
 
@@ -953,21 +1098,78 @@ function frame(now) {
 }
 
 /* ==== INPUT ==== */
+function directionalInput(event) {
+  const code = event.code || '';
+  const key = event.key || '';
+  const keyCode = event.keyCode || event.which;
+  if (key === 'ArrowUp' || code === 'ArrowUp' || keyCode === 38 || keyCode === 19) return { x: 0, y: -1 };
+  if (key === 'ArrowDown' || code === 'ArrowDown' || keyCode === 40 || keyCode === 20) return { x: 0, y: 1 };
+  if (key === 'ArrowLeft' || code === 'ArrowLeft' || keyCode === 37 || keyCode === 21) return { x: -1, y: 0 };
+  if (key === 'ArrowRight' || code === 'ArrowRight' || keyCode === 39 || keyCode === 22) return { x: 1, y: 0 };
+  return null;
+}
+
+function remoteDirection(event) {
+  const direction = directionalInput(event);
+  return direction ? (direction.x || direction.y) : 0;
+}
+
+function isBackKey(event) {
+  return event.key === 'Escape'
+    || event.code === 'Escape'
+    || event.key === 'BrowserBack'
+    || event.code === 'BrowserBack'
+    || event.keyCode === 27 || event.keyCode === 10009;
+}
+
+function isRemoteConfirmKey(event) {
+  return event.key === 'OK' || event.key === 'Select' || event.keyCode === 23;
+}
+
 document.addEventListener('keydown', e => {
-  if (e.code === 'KeyP' || e.key === 'Escape') {
+  if (!gameReadyForInput) return;
+
+  if (isUiFocusMode()) {
+    // Range inputs retain their native keyboard behaviour (including arrows).
+    if (isUiControl(document.activeElement) && document.activeElement.matches('input')) return;
+    if (isUiControl(document.activeElement) && isRemoteConfirmKey(e)) {
+      e.preventDefault();
+      document.activeElement.click();
+      return;
+    }
+    const uiDirection = remoteDirection(e);
+    if (uiDirection) {
+      e.preventDefault();
+      moveUiFocus(uiDirection);
+      return;
+    }
+    if (isBackKey(e)) {
+      e.preventDefault();
+      if (!shopModal.classList.contains('hidden')) {
+        closeShop();
+      } else if (paused) {
+        togglePause();
+      } else {
+        focusGameSurface();
+      }
+      return;
+    }
+    return;
+  }
+
+  if (e.code === 'KeyP' || e.key === 'p' || e.key === 'P' || isBackKey(e)) {
+    e.preventDefault();
     togglePause();
     return;
   }
 
   const map = {
-    ArrowUp: { x: 0, y: -1 }, ArrowDown: { x: 0, y: 1 },
-    ArrowLeft: { x: -1, y: 0 }, ArrowRight: { x: 1, y: 0 },
     w: { x: 0, y: -1 }, W: { x: 0, y: -1 },
     s: { x: 0, y: 1 }, S: { x: 0, y: 1 },
     a: { x: -1, y: 0 }, A: { x: -1, y: 0 },
     d: { x: 1, y: 0 }, D: { x: 1, y: 0 },
   };
-  let nd = map[e.key];
+  let nd = directionalInput(e) || map[e.key];
   if (!nd && e.code) {
     const cmap = { KeyW: { x: 0, y: -1 }, KeyS: { x: 0, y: 1 }, KeyA: { x: -1, y: 0 }, KeyD: { x: 1, y: 0 } };
     nd = cmap[e.code];
@@ -982,17 +1184,12 @@ document.addEventListener('keydown', e => {
 });
 
 let touchStart = null;
-canvas.addEventListener('touchstart', e => {
-  touchStart = { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
-}, { passive: true });
 
-canvas.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
-
-canvas.addEventListener('touchend', e => {
-  if (!touchStart || gameOver || win || paused) return;
-  const dx = e.changedTouches[0].clientX - touchStart.x;
-  const dy = e.changedTouches[0].clientY - touchStart.y;
-  touchStart = null;
+function applySwipe(startX, startY, endX, endY) {
+  if (!gameReadyForInput) return;
+  if (gameOver || win || paused) return;
+  const dx = endX - startX;
+  const dy = endY - startY;
 
   if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
 
@@ -1006,7 +1203,52 @@ canvas.addEventListener('touchend', e => {
   const current = pendingDir || direction;
   if (nd.x + current.x === 0 && nd.y + current.y === 0) return;
   pendingDir = nd;
-}, { passive: true });
+}
+
+if ('PointerEvent' in window) {
+  let activePointerId = null;
+
+  canvas.addEventListener('pointerdown', (event) => {
+    activePointerId = event.pointerId;
+    touchStart = { x: event.clientX, y: event.clientY };
+    canvas.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+  }, { passive: false });
+
+  canvas.addEventListener('pointermove', (event) => {
+    if (event.pointerId === activePointerId) event.preventDefault();
+  }, { passive: false });
+
+  const finishPointer = (event) => {
+    if (event.pointerId !== activePointerId) return;
+    event.preventDefault();
+    if (touchStart) applySwipe(touchStart.x, touchStart.y, event.clientX, event.clientY);
+    touchStart = null;
+    activePointerId = null;
+  };
+  canvas.addEventListener('pointerup', finishPointer, { passive: false });
+  canvas.addEventListener('pointercancel', (event) => {
+    if (event.pointerId !== activePointerId) return;
+    event.preventDefault();
+    touchStart = null;
+    activePointerId = null;
+  }, { passive: false });
+} else {
+  canvas.addEventListener('touchstart', (event) => {
+    const touch = event.changedTouches[0];
+    touchStart = { x: touch.clientX, y: touch.clientY };
+    event.preventDefault();
+  }, { passive: false });
+
+  canvas.addEventListener('touchmove', (event) => event.preventDefault(), { passive: false });
+
+  canvas.addEventListener('touchend', (event) => {
+    event.preventDefault();
+    const touch = event.changedTouches[0];
+    if (touchStart) applySwipe(touchStart.x, touchStart.y, touch.clientX, touch.clientY);
+    touchStart = null;
+  }, { passive: false });
+}
 
 document.getElementById('restartBtn').addEventListener('click', () => newGame(true));
 document.getElementById('autoBtn').addEventListener('click', toggleAutoPlay);
@@ -1029,10 +1271,19 @@ function applySave() {
   renderModes();
 }
 
-(async function boot() {
-  await Platform.init();
+/*
+ * Точка входа игры. Платформа приходит извне уже готовой — игра её не создаёт
+ * и не выбирает, поэтому этот же вызов работает и с mock, и с любым будущим
+ * адаптером.
+ */
+export async function startGame(platformServices) {
+  platform = platformServices;
+  subscribePlatformEvents();
 
-  const loaded = await Platform.loadData();
+  I18n.setLanguage(platform.language);
+  I18n.applyStatic();
+
+  const loaded = await platform.storage.load();
   if (loaded && typeof loaded === 'object') {
     save = Object.assign(save, loaded);
   }
@@ -1051,6 +1302,8 @@ function applySave() {
 
   applySave();
   init();
-  Platform.ready();
+  // Paint the fully initialized board before reporting LoadingAPI readiness.
+  draw(performance.now());
+  openGame();
   requestAnimationFrame(frame);
-})();
+}
