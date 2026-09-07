@@ -1,0 +1,10 @@
+{
+  "static_path": "build/vk",
+  "app_id": 54757792,
+  "endpoints": {
+    "mobile": "index.html",
+    "web": "index.html",
+    "mvk": "index.html"
+  },
+  "noprompt": 1
+}

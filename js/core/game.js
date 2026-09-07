@@ -13,6 +13,13 @@ import { PlatformEvent } from '../platform/core/events.js';
 /* Сервисы площадки. Заполняется один раз в startGame(). */
 let platform = null;
 
+/*
+ * Конфигурация сборки (js/platform.config.js): она приходит из composition
+ * root вместе с платформой. Игре отсюда нужен только контакт поддержки —
+ * у площадок разные требования к тому, что можно показывать игроку.
+ */
+let buildConfig = {};
+
 /* ==== DOM ==== */
 const canvas = document.getElementById('game');
 const gameSurface = canvas.closest('.canvas-container');
@@ -28,8 +35,11 @@ const overlayTitle = document.getElementById('overlayTitle');
 const overlaySub = document.getElementById('overlaySub');
 const reviveBtn = document.getElementById('reviveBtn');
 const x2Btn = document.getElementById('x2Btn');
+const leaderboardBtn = document.getElementById('leaderboardBtn');
 const overlayRestart = document.getElementById('overlayRestart');
 const shopModal = document.getElementById('shopModal');
+const helpModal = document.getElementById('helpModal');
+const helpSupport = document.getElementById('helpSupport');
 const shopCoinsEl = document.getElementById('shopCoins');
 const skinListEl = document.getElementById('skinList');
 const muteBtn = document.getElementById('muteBtn');
@@ -51,6 +61,7 @@ function isUiFocusMode() {
   return paused
     || !overlayEl.classList.contains('hidden')
     || !shopModal.classList.contains('hidden')
+    || !helpModal.classList.contains('hidden')
     || isUiControl(document.activeElement);
 }
 
@@ -65,11 +76,13 @@ function focusGameSurface() {
 }
 
 function visibleButtons() {
-  const scope = !shopModal.classList.contains('hidden')
-    ? shopModal
-    : !overlayEl.classList.contains('hidden')
-      ? overlayEl
-      : document;
+  const scope = !helpModal.classList.contains('hidden')
+    ? helpModal
+    : !shopModal.classList.contains('hidden')
+      ? shopModal
+      : !overlayEl.classList.contains('hidden')
+        ? overlayEl
+        : document;
   return [...scope.querySelectorAll('button')].filter(isElementVisible);
 }
 
@@ -131,6 +144,7 @@ let save = {
   selectedSkin: 'classic',
   muted: false,
   mode: 'classic',
+  tutorialSeen: false,
 };
 
 function persist() {
@@ -468,12 +482,18 @@ function rewardedAvailable() {
   return platform.capabilities.rewarded;
 }
 
+/* Кнопку таблицы результатов показываем там, где у площадки есть своё окно. */
+function updateLeaderboardBtn() {
+  leaderboardBtn.classList.toggle('hidden', !platform.capabilities.leaderboardUi || score === 0);
+}
+
 function showGameOverOverlay() {
   overlayTitle.textContent = tr('gameOver');
   overlayTitle.style.color = '#ff6b6b';
   overlaySub.innerHTML = overlaySubHTML();
   reviveBtn.classList.toggle('hidden', reviveUsed || !rewardedAvailable());
   x2Btn.classList.toggle('hidden', x2Used || score === 0 || !rewardedAvailable());
+  updateLeaderboardBtn();
   overlayEl.classList.remove('hidden');
   focusButton(overlayRestart);
 }
@@ -484,9 +504,16 @@ function showWinOverlay() {
   overlaySub.innerHTML = tr('victoryDetails', { coin: COIN_ICO, summary: overlaySubHTML() });
   reviveBtn.classList.add('hidden');
   x2Btn.classList.toggle('hidden', x2Used || score === 0 || !rewardedAvailable());
+  updateLeaderboardBtn();
   overlayEl.classList.remove('hidden');
   focusButton(overlayRestart);
 }
+
+/* Окно площадки, а не наш экран: игра только передаёт результат раунда. */
+leaderboardBtn.addEventListener('click', async () => {
+  sound('click');
+  await platform.leaderboard.showUi(score);
+});
 
 function hideOverlay() {
   overlayEl.classList.add('hidden');
@@ -679,6 +706,53 @@ document.getElementById('shopClose').addEventListener('click', () => {
 
 shopModal.addEventListener('click', (e) => {
   if (e.target === shopModal) closeShop();
+});
+
+/* ==== ОБУЧЕНИЕ И ПОДДЕРЖКА ==== */
+
+/*
+ * Правила и подсказки для новичка. Открывается сама при первом запуске
+ * (требование каталогов игр) и по кнопке «❓» в любой момент.
+ */
+function openHelp() {
+  helpModal.classList.remove('hidden');
+  if (!paused && !gameOver && !win) togglePause();
+  focusButton(document.getElementById('helpStart'));
+}
+
+function closeHelp() {
+  helpModal.classList.add('hidden');
+  if (!save.tutorialSeen) {
+    save.tutorialSeen = true;
+    persist();
+  }
+  focusButton(document.getElementById('helpBtn'));
+}
+
+/* Контакт поддержки задаётся сборкой: где его показывать нельзя — его нет. */
+function renderSupport() {
+  const contact = buildConfig.support;
+  helpSupport.classList.toggle('hidden', !contact);
+  if (contact) helpSupport.textContent = tr('helpSupport', { contact });
+}
+
+document.getElementById('helpBtn').addEventListener('click', () => {
+  sound('click');
+  openHelp();
+});
+
+document.getElementById('helpClose').addEventListener('click', () => {
+  closeHelp();
+  sound('click');
+});
+
+document.getElementById('helpStart').addEventListener('click', () => {
+  closeHelp();
+  sound('click');
+});
+
+helpModal.addEventListener('click', (e) => {
+  if (e.target === helpModal) closeHelp();
 });
 
 /* ==== ЗВУК ON/OFF ==== */
@@ -1145,7 +1219,9 @@ document.addEventListener('keydown', e => {
     }
     if (isBackKey(e)) {
       e.preventDefault();
-      if (!shopModal.classList.contains('hidden')) {
+      if (!helpModal.classList.contains('hidden')) {
+        closeHelp();
+      } else if (!shopModal.classList.contains('hidden')) {
         closeShop();
       } else if (paused) {
         togglePause();
@@ -1276,8 +1352,9 @@ function applySave() {
  * и не выбирает, поэтому этот же вызов работает и с mock, и с любым будущим
  * адаптером.
  */
-export async function startGame(platformServices) {
+export async function startGame(platformServices, config = {}) {
   platform = platformServices;
+  buildConfig = config;
   subscribePlatformEvents();
 
   I18n.setLanguage(platform.language);
@@ -1301,9 +1378,12 @@ export async function startGame(platformServices) {
   save.highScore = Math.max(0, +save.highScore || 0);
 
   applySave();
+  renderSupport();
   init();
   // Paint the fully initialized board before reporting LoadingAPI readiness.
   draw(performance.now());
   openGame();
+  /* Новичок сначала читает правила, раунд ждёт на паузе. */
+  if (!save.tutorialSeen) openHelp();
   requestAnimationFrame(frame);
 }

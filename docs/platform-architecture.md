@@ -39,7 +39,8 @@ js/
     │   ├── local-storage.js     StorageService поверх localStorage
     │   └── factory.js           реестр адаптеров + createPlatform()
     ├── mock/mock-platform.js    ← АДАПТЕР: локальная заглушка, без SDK
-    └── yandex/yandex-platform.js← АДАПТЕР: Яндекс Игры (единственный файл с YaGames)
+    ├── yandex/yandex-platform.js← АДАПТЕР: Яндекс Игры (единственный файл с YaGames)
+    └── vk/vk-platform.js        ← АДАПТЕР: VK Игры (единственный файл с vkBridge)
 tools/build.mjs                  сборка билда под площадку + zip
 ```
 
@@ -61,7 +62,7 @@ tools/build.mjs                  сборка билда под площадку
 Фасад `PlatformServices` собирает их вместе и добавляет:
 
 * `environment` — `{ platformId, language, deviceType }`;
-* `capabilities` — `{ interstitial, rewarded, leaderboard, auth, payments }`;
+* `capabilities` — `{ interstitial, rewarded, leaderboard, leaderboardUi, auth, payments }`;
 * `events` / `on(event, handler)` — платформенно-независимые события;
 * `extensions` — уникальные возможности конкретной площадки.
 
@@ -144,6 +145,7 @@ Mock используется ещё в двух случаях: когда `pla
 
 ```bash
 node tools/build.mjs yandex     # build/yandex/ + build/yandex.zip
+node tools/build.mjs vk         # build/vk/     + build/vk.zip
 node tools/build.mjs mock       # build/mock/   + build/mock.zip
 node tools/build.mjs --all
 ```
@@ -153,7 +155,9 @@ node tools/build.mjs --all
 1. подставляет в `<!--PLATFORM_HEAD-->` загрузчик SDK площадки (площадки требуют
    инициализировать SDK как можно раньше, ещё в `<head>`);
 2. пишет `js/platform.config.js` с идентификатором площадки;
-3. кладёт только нужные адаптеры: `core`, `mock` (как фолбэк) и выбранный;
+3. кладёт только нужные адаптеры: `core`, `mock` (как фолбэк) и выбранный, плюс
+   объявленные площадкой файлы (`files`) — так библиотека VK Bridge попадает
+   только в сборку `vk`;
 4. пакует результат в zip с путями через `/` — архив от старых версий
    `Compress-Archive` хостинг Яндекс Игр не принимает.
 
@@ -214,12 +218,15 @@ node tools/build.mjs --all
    const ADAPTERS = {
      mock: () => import('../mock/mock-platform.js'),
      yandex: () => import('../yandex/yandex-platform.js'),
+     vk: () => import('../vk/vk-platform.js'),
      x: () => import('../x/x-platform.js'),
    };
    ```
 
 3. **Сборка** — одна запись в `PLATFORMS` в `tools/build.mjs`: идентификатор,
-   описание и `head` со `<script>` загрузчика SDK площадки.
+   описание и `head` со `<script>` загрузчика SDK площадки. Необязательно:
+   `files` — дополнительные файлы билда, `config` — значения, которые попадут в
+   `js/platform.config.js` (так задан контакт поддержки для VK).
 
 4. `node tools/build.mjs x` — готово. Ни одна строка в `js/core/` не менялась.
 
@@ -228,17 +235,18 @@ node tools/build.mjs --all
 
 ## Что уже реализовано
 
-| Возможность | Mock | Яндекс Игры |
-|---|---|---|
-| Interstitial | да, с той же политикой частоты | `adv.showFullscreenAdv`, не чаще 1 / 65 с и не в первом раунде |
-| Rewarded | да, награда всегда | `adv.showRewardedVideo`, награда только после `onRewarded` |
-| Сохранения | `localStorage` | облако игрока + `localStorage` как резерв |
-| Лидерборд | в памяти вкладки | `snakeScore` (создаётся в консоли разработчика) |
-| Жизненный цикл | лог в консоль | `LoadingAPI.ready`, `GameplayAPI.start/stop` |
-| Игрок | тестовый профиль | `getPlayer({ scopes: false })` → `PlayerData` |
-| Платежи | тестовая покупка | не реализованы намеренно: игре не нужны, `capabilities.payments === false` |
-| Пауза от хоста | — | `game_api_pause` / `game_api_resume` |
-| Extensions | — | `stickyBanner` |
+| Возможность | Mock | Яндекс Игры | VK Игры |
+|---|---|---|---|
+| Interstitial | да, с той же политикой частоты | `adv.showFullscreenAdv`, не чаще 1 / 65 с и не в первом раунде | `VKWebAppShowNativeAds` (`interstitial`), та же политика частоты |
+| Rewarded | да, награда всегда | `adv.showRewardedVideo`, награда только после `onRewarded` | `VKWebAppShowNativeAds` (`reward`), награда при `result === true` |
+| Наличие рекламы | всегда | всегда | `VKWebAppCheckNativeAds` при старте, по таймеру и после показа |
+| Сохранения | `localStorage` | облако игрока + `localStorage` как резерв | VK Storage (запись не чаще 1 / 5 с) + `localStorage` как резерв |
+| Лидерборд | в памяти вкладки | `snakeScore` (создаётся в консоли разработчика) | тихой отправки нет; окно `VKWebAppShowLeaderBoardBox` через `showUi()` |
+| Жизненный цикл | лог в консоль | `LoadingAPI.ready`, `GameplayAPI.start/stop` | аналога нет, базовые пустые методы |
+| Игрок | тестовый профиль | `getPlayer({ scopes: false })` → `PlayerData` | `VKWebAppGetUserInfo` → `PlayerData` |
+| Платежи | тестовая покупка | не реализованы намеренно: игре не нужны, `capabilities.payments === false` | то же; голоса VK — при появлении платных покупок |
+| Пауза от хоста | — | `game_api_pause` / `game_api_resume` | `VKWebAppViewHide` / `VKWebAppViewRestore` |
+| Extensions | — | `stickyBanner` | `banner` |
 
 ## Прямые упоминания SDK в проекте
 
@@ -246,6 +254,8 @@ node tools/build.mjs --all
 |---|---|---|
 | `YaGames`, `ysdk.*` | `js/platform/yandex/yandex-platform.js` | адаптер площадки — единственное допустимое место |
 | `/sdk.js`, `YaGames.init()` | `tools/build.mjs` (строка `PLATFORMS.yandex.head`) | Яндекс требует инициализировать SDK в `<head>`; сборка подставляет это в разметку |
-| `'yandex'` (строка-идентификатор) | `js/platform/core/factory.js`, `js/platform.config.js` | реестр и конфигурация сборки — единственные места, где площадка называется по имени |
+| `vkBridge` | `js/platform/vk/vk-platform.js` | адаптер площадки — единственное допустимое место |
+| `vk-bridge.min.js`, `VKWebAppInit` | `tools/build.mjs` (строка `PLATFORMS.vk.head`), `js/vendor/` | VK требует отправить `VKWebAppInit` до загрузки основных ресурсов; библиотека едет в билде, без стороннего CDN |
+| `'yandex'`, `'vk'` (строки-идентификаторы) | `js/platform/core/factory.js`, `js/platform.config.js` | реестр и конфигурация сборки — единственные места, где площадка называется по имени |
 
 В `js/core/` упоминаний SDK нет.

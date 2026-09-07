@@ -1,0 +1,17 @@
+{
+  "name": "snake-autopilot",
+  "version": "2.2.0",
+  "private": true,
+  "description": "Змейка: Автопилот — браузерная игра на чистом JavaScript. npm нужен только для выкладки на хостинг VK.",
+  "homepage": ".",
+  "scripts": {
+    "build": "node tools/build.mjs vk",
+    "build:all": "node tools/build.mjs --all",
+    "predeploy": "npm run build",
+    "deploy": "vk-miniapps-deploy"
+  },
+  "devDependencies": {
+    "@vkontakte/vk-miniapps-deploy": "^0.1.7",
+    "puppeteer-core": "^25.10.0"
+  }
+}

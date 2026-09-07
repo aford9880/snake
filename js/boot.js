@@ -11,5 +11,5 @@ import { platformConfig } from './platform.config.js';
 import { startGame } from './core/game.js';
 
 createPlatform(platformConfig)
-  .then(platform => startGame(platform))
+  .then(platform => startGame(platform, platformConfig))
   .catch(error => console.error('Boot failed', error));

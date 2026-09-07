@@ -43,6 +43,7 @@ export class StorageService {
 
 /* Лидерборды. */
 export class LeaderboardService {
+  /* Площадка умеет принимать счёт в фоне, без участия игрока. */
   get available() {
     return false;
   }
@@ -54,6 +55,21 @@ export class LeaderboardService {
   /* @returns {Promise<LeaderboardEntry[]>} */
   async getTop(_limit = 10) {
     return [];
+  }
+
+  /*
+   * Площадка умеет показать собственное окно с таблицей результатов.
+   * Есть площадки (VK), где это единственный доступный вид лидерборда:
+   * тихой отправки счёта нет, зато есть готовый диалог. Игра показывает
+   * кнопку «Таблица результатов», только если возможность объявлена.
+   */
+  get canShowUi() {
+    return false;
+  }
+
+  /* Открыть окно площадки. @returns {Promise<boolean>} показано ли окно */
+  async showUi(_score) {
+    return false;
   }
 }
 

@@ -58,6 +58,7 @@ export class PlatformServices {
       interstitial: !!ads.interstitial,
       rewarded: !!ads.rewarded,
       leaderboard: this.leaderboard.available,
+      leaderboardUi: this.leaderboard.canShowUi,
       auth: this.player.available,
       payments: this.payments.available,
     });

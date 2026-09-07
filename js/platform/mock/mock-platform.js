@@ -80,6 +80,15 @@ class MockLeaderboardService extends LeaderboardService {
     return this.#scores.slice(0, limit)
       .map((score, index) => ({ rank: index + 1, score, name: 'you', isCurrentPlayer: true }));
   }
+
+  get canShowUi() {
+    return true;
+  }
+
+  async showUi(score) {
+    console.log('[mock] leaderboard box', score);
+    return true;
+  }
 }
 
 class MockLifecycleService extends LifecycleService {

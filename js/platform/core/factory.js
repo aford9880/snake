@@ -15,6 +15,7 @@ import { PlatformServices } from './platform-services.js';
 const ADAPTERS = {
   mock: () => import('../mock/mock-platform.js'),
   yandex: () => import('../yandex/yandex-platform.js'),
+  vk: () => import('../vk/vk-platform.js'),
 };
 
 export function listPlatforms() {
@@ -29,6 +30,7 @@ export function detectPlatformId() {
   const override = new URLSearchParams(window.location.search).get('platform');
   if (override && ADAPTERS[override]) return override;
   if (typeof window.YaGames !== 'undefined') return 'yandex';
+  if (typeof window.vkBridge !== 'undefined') return 'vk';
   return 'mock';
 }
 

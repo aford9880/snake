@@ -48,6 +48,24 @@ const PLATFORMS = {
     ].join('\n'),
     description: 'Яндекс Игры',
   },
+  vk: {
+    head: [
+      '<!-- VK Bridge ships with the build: VK asks not to depend on external CDNs. -->',
+      '<script src="js/vendor/vk-bridge.min.js"></script>',
+      '<script>',
+      '  // VKWebAppInit must be sent before the main resources load.',
+      "  window.__vkBridgeInit = typeof vkBridge !== 'undefined' ? vkBridge.send('VKWebAppInit', {}) : null;",
+      '</script>',
+    ].join('\n'),
+    /* Библиотека моста лежит в репозитории и попадает только в сборку VK. */
+    files: ['js/vendor/vk-bridge.min.js'],
+    /*
+     * Требование каталога игр VK: в игре должен быть канал связи с поддержкой.
+     * Игра показывает его в окне «Как играть».
+     */
+    config: { support: 'alex_bk@list.ru' },
+    description: 'VK Игры',
+  },
 };
 
 /* Общие файлы игры, одинаковые для всех площадок. */
@@ -70,14 +88,22 @@ const SHARED = [
 ];
 
 function adapterFiles(platformId) {
-  return platformId === 'mock' ? [] : [`js/platform/${platformId}/${platformId}-platform.js`];
+  const adapter = platformId === 'mock' ? [] : [`js/platform/${platformId}/${platformId}-platform.js`];
+  return [...adapter, ...(PLATFORMS[platformId].files ?? [])];
 }
 
 function configSource(platformId) {
+  const config = {
+    platform: platformId,
+    saveKey: 'snakeSave',
+    ...(PLATFORMS[platformId].config ?? {}),
+  };
+  const body = Object.entries(config)
+    .map(([key, value]) => `  ${key}: ${JSON.stringify(value)},`)
+    .join('\n');
   return `/* Сгенерировано tools/build.mjs — не редактировать в сборке. */
 export const platformConfig = {
-  platform: '${platformId}',
-  saveKey: 'snakeSave',
+${body}
 };
 `;
 }

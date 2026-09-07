@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>Змейка: Автопилот</title>
-<link rel="stylesheet" href="css/style.css?v=6">
+<link rel="stylesheet" href="css/style.css?v=7">
 <!--
   Платформенный bootstrap. В репозитории маркер пуст: игра открывается локально
   на mock-платформе без единого SDK. При сборке под площадку tools/build.mjs
@@ -48,6 +48,7 @@
     <div class="toolbar">
       <div class="mode-chips" id="modeChips"></div>
       <div class="icon-btns">
+        <button type="button" class="icon-btn" id="helpBtn" title="Как играть" aria-label="Как играть" data-i18n-title="helpTitle" data-i18n-aria-label="helpTitle">❓</button>
         <button type="button" class="icon-btn" id="shopBtn" title="Магазин скинов" aria-label="Магазин скинов" data-i18n-title="shopTitle" data-i18n-aria-label="shopTitle">🛍️</button>
         <button type="button" class="icon-btn" id="muteBtn" title="Звук" aria-label="Звук" data-i18n-title="soundTitle" data-i18n-aria-label="soundTitle">🔊</button>
         <button type="button" class="icon-btn" id="pauseBtn" title="Пауза (P)" aria-label="Пауза (P)" data-i18n-title="pauseTitle" data-i18n-aria-label="pauseTitle">⏸️</button>
@@ -64,6 +65,7 @@
         <div class="overlay-btns">
           <button type="button" id="reviveBtn" class="ad-btn" data-i18n="revive">📺 Возродиться</button>
           <button type="button" id="x2Btn" class="ad-btn" data-i18n="doubleScore">📺 Удвоить очки</button>
+          <button type="button" id="leaderboardBtn" class="hidden" data-i18n="leaderboard">🏆 Таблица результатов</button>
           <button type="button" id="overlayRestart" data-i18n="newGame">Новая игра</button>
         </div>
       </div>
@@ -93,6 +95,31 @@
     </div>
     <div id="skinList" class="skin-list"></div>
     <p class="shop-hint" data-i18n="shopHint">Монеты начисляются за еду: +1 за обычную, +5 за бонусную ⭐, +100 за победу</p>
+  </div>
+</div>
+
+<!--
+  Обучение и связь с поддержкой. Открывается автоматически при первом запуске
+  и по кнопке «❓». Контакт поддержки подставляется из конфигурации сборки:
+  если его нет, блок скрыт.
+-->
+<div id="helpModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2 id="helpTitle" data-i18n="helpTitle">Как играть</h2>
+      <button type="button" class="icon-btn" id="helpClose" aria-label="Закрыть" data-i18n-aria-label="closeHelp">✕</button>
+    </div>
+    <ul class="help-list">
+      <li data-i18n-html="helpGoal"></li>
+      <li data-i18n-html="helpControls"></li>
+      <li data-i18n-html="helpModes"></li>
+      <li data-i18n-html="helpCoins"></li>
+      <li data-i18n-html="helpAuto"></li>
+    </ul>
+    <p class="help-support hidden" id="helpSupport"></p>
+    <div class="help-actions">
+      <button type="button" id="helpStart" data-i18n="helpGotIt">Понятно</button>
+    </div>
   </div>
 </div>
 
